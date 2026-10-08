@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 3.2.4 - 2026-10-08
+
++ [优化] 安装脚本、部署文档、默认容器镜像和控制台项目链接统一切换到 `Const-Time/chatgpt2api`，镜像使用 `ghcr.io/const-time/chatgpt2api`。
++ [修复] 在线更新从当前仓库读取 Release、更新包和更新日志，避免安装上游仓库的版本。
++ [修复] 安装脚本生成镜像地址时将仓库所有者和仓库名转换为小写，支持包含大写字母的 GitHub 仓库名。
+
 ## 3.2.3 - 2026-09-09
 
 + [新增] Python 图片接口和共享模型列表支持 `gpt-image-2.5`、`gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`，通过 ChatGPT Web 的 `auto` 路由兼容，不包含 `exact` 别名。

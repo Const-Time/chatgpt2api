@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_OWNER="${REPO_OWNER:-yukkcat}"
+REPO_OWNER="${REPO_OWNER:-Const-Time}"
 REPO_NAME="${REPO_NAME:-chatgpt2api}"
 BRANCH="${BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/chatgpt2api}"
@@ -29,7 +29,7 @@ usage() {
   printf '%s\n' "$(text usage_usage)"
   cat <<'EOF'
   bash deploy/install.sh
-  curl -fsSL https://raw.githubusercontent.com/yukkcat/chatgpt2api/main/deploy/install.sh | sudo bash
+  curl -fsSL https://raw.githubusercontent.com/Const-Time/chatgpt2api/main/deploy/install.sh | sudo bash
 EOF
 
   printf '\n%s\n' "$(text usage_env)"
@@ -44,7 +44,7 @@ EOF
   DATABASE_URL=postgresql://...
   POSTGRES_PASSWORD=generated-automatically
   INSTALL_LANG=zh|en
-  CHATGPT2API_IMAGE=ghcr.io/yukkcat/chatgpt2api:latest
+  CHATGPT2API_IMAGE=ghcr.io/const-time/chatgpt2api:latest
 EOF
 
   printf '\n%s\n' "$(text usage_flags)"
@@ -58,7 +58,7 @@ EOF
   --database sqlite|postgres-local|postgres-url
   --database-url postgresql://...
   --postgres-password your-postgres-password
-  --repo-owner yukkcat
+  --repo-owner Const-Time
   --repo-name chatgpt2api
   -h, --help
 EOF
@@ -515,11 +515,11 @@ default_image() {
   fi
 
   if [[ "${BRANCH}" =~ ^v?[0-9] ]]; then
-    printf 'ghcr.io/%s/%s:%s' "${REPO_OWNER}" "${REPO_NAME}" "${BRANCH}"
+    printf 'ghcr.io/%s/%s:%s' "${REPO_OWNER,,}" "${REPO_NAME,,}" "${BRANCH}"
     return
   fi
 
-  printf 'ghcr.io/%s/%s:latest' "${REPO_OWNER}" "${REPO_NAME}"
+  printf 'ghcr.io/%s/%s:latest' "${REPO_OWNER,,}" "${REPO_NAME,,}"
 }
 
 raw_url() {
