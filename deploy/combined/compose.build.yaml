@@ -1,0 +1,8 @@
+# Run with compose.yaml from this directory when the chatgpt2api image is unavailable.
+services:
+  chatgpt2api:
+    image: chatgpt2api:local
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: app

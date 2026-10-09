@@ -6,22 +6,81 @@ on:
       - "v*"
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "已有发布标签，例如 v3.2.4；留空只验证所选分支"
+        required: false
+        type: string
 
-env:
-  IMAGE_NAME: chatgpt2api
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.release.outputs.ref }}
+      tag: ${{ steps.release.outputs.tag }}
+      sha: ${{ steps.release.outputs.sha }}
+      image: ${{ steps.release.outputs.image }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+
+      - name: Validate release version and resolve commit
+        id: release
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import tomllib
+          from pathlib import Path
+
+          version = Path("VERSION").read_text().strip()
+          if not re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", version):
+              raise SystemExit("VERSION must be a stable version such as 3.2.4")
+          project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
+          uv_lock = tomllib.loads(Path("uv.lock").read_text())
+          package = json.loads(Path("web-vue/package.json").read_text())
+          npm_lock = json.loads(Path("web-vue/package-lock.json").read_text())
+          versions = [project["version"], package["version"], npm_lock["version"],
+                      npm_lock["packages"][""]["version"],
+                      next(p["version"] for p in uv_lock["package"] if p["name"] == "chatgpt2api")]
+          if any(value != version for value in versions):
+              raise SystemExit("VERSION, package metadata and lockfile versions must match")
+          tag = os.environ.get("REQUESTED_TAG", "")
+          if not tag and os.environ["GITHUB_REF"].startswith("refs/tags/"):
+              tag = os.environ["GITHUB_REF"].removeprefix("refs/tags/")
+          if tag:
+              if tag != f"v{version}":
+                  raise SystemExit(f"Release tag must match VERSION: v{version}")
+              changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+              section = re.search(rf"^## {re.escape(version)} - \d{{4}}-\d{{2}}-\d{{2}}\s*\n(.*?)(?=^## |\Z)",
+                                  changelog, re.MULTILINE | re.DOTALL)
+              if not section or not section[1].strip():
+                  raise SystemExit("CHANGELOG.md must contain non-empty notes for this version")
+          sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"ref={'refs/tags/' + tag if tag else ''}\n")
+              output.write(f"tag={tag}\nsha={sha}\n")
+              output.write(f"image=ghcr.io/{os.environ['GITHUB_REPOSITORY'].lower()}\n")
+          PY
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
@@ -47,8 +106,8 @@ jobs:
           npm run build
 
   release-bundle:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: verify
+    if: startsWith(needs.verify.outputs.ref, 'refs/tags/v')
+    needs: [verify, docker]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -56,6 +115,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -99,7 +160,11 @@ jobs:
           EOF
 
           tar -C release -czf release/chatgpt2api-app.tar.gz chatgpt2api-app
-          (cd release && sha256sum chatgpt2api-app.tar.gz > checksums.txt)
+          git archive --format=tar.gz --prefix=chatgpt2api-deploy/ \
+            -o release/chatgpt2api-deploy.tar.gz HEAD \
+            deploy docker-compose.yml docker-compose.local.yml docker-compose.postgres.yml \
+            .env.example docs/deployment.md
+          (cd release && sha256sum chatgpt2api-app.tar.gz chatgpt2api-deploy.tar.gz > checksums.txt)
           awk -v version="${version}" '
             /^## / {
               if (capture) exit
@@ -113,13 +178,17 @@ jobs:
       - name: Upload online update bundle
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.verify.outputs.tag }}
+          target_commitish: ${{ needs.verify.outputs.sha }}
           body_path: release/release-notes.md
+          fail_on_unmatched_files: true
           files: |
             release/chatgpt2api-app.tar.gz
+            release/chatgpt2api-deploy.tar.gz
             release/checksums.txt
 
   docker:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(needs.verify.outputs.ref, 'refs/tags/v')
     needs: verify
     runs-on: ubuntu-latest
     permissions:
@@ -129,6 +198,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -149,12 +220,16 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          images: ${{ needs.verify.outputs.image }}
+          flavor: latest=false
           tags: |
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+            type=raw,value=${{ needs.verify.outputs.tag }}
+            type=semver,pattern={{version}},value=${{ needs.verify.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.verify.outputs.tag }}
+          labels: |
+            org.opencontainers.image.revision=${{ needs.verify.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.verify.outputs.tag }}
 
       - name: Build and push image
         uses: docker/build-push-action@v6

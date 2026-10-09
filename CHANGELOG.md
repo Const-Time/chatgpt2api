@@ -2,6 +2,9 @@
 
 ## Unreleased
 
++ [新增] 提供与 codex-proxy-rs 联合部署的 Compose 模板，共用 PostgreSQL 18 实例并隔离数据库和账号，Redis 供 codex-proxy-rs 使用。
++ [新增] GitHub Actions 支持手动指定已有版本标签，构建双架构 GHCR 镜像并发布在线更新包、部署配置包与校验文件；发布前检查版本一致性。
+
 ## 3.2.4 - 2026-10-08
 
 + [优化] 安装脚本、部署文档、默认容器镜像和控制台项目链接统一切换到 `Const-Time/chatgpt2api`，镜像使用 `ghcr.io/const-time/chatgpt2api`。

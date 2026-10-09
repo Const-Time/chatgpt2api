@@ -10,6 +10,7 @@ Status: current
 | 操作 | 文档 |
 | --- | --- |
 | Docker 与源码部署、备份和升级 | [`../deployment.md`](../deployment.md) |
+| GitHub Release 与 GHCR 镜像发布 | [`github-release.md`](github-release.md) |
 
 ## 编写要求
 

@@ -2,9 +2,13 @@
 
 状态：当前
 
+维护者构建 Release 和 GHCR 镜像的步骤见 [GitHub 发布操作说明](runbooks/github-release.md)。
+
 本项目的发布镜像默认是 `ghcr.io/const-time/chatgpt2api:latest`。标准 Compose 将服务暴露在 `3000` 端口，使用 `chatgpt2api-runtime` 命名卷保存可更新的应用运行目录，并单独挂载本地 `data/` 和 `config.json`。运行时配置和数据不应提交到 Git。
 
 ## Docker 部署
+
+与 codex-proxy-rs 同机首次部署时，可使用[联合部署配置](../deploy/combined/README.md)，共用一个 PostgreSQL 实例并分别保存两个应用的数据。
 
 ```bash
 git clone https://github.com/Const-Time/chatgpt2api.git

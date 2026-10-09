@@ -21,6 +21,8 @@ docker-compose-local.yml
 # Environment variables
 .env
 .env.local
+/deploy/combined/config.yaml
+/deploy/combined/backups/
 
 # Database files
 *.db

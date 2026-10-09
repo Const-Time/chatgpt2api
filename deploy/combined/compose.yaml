@@ -1,0 +1,129 @@
+name: ai-services
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
+
+services:
+  postgres:
+    extends:
+      file: config.yaml
+      service: postgres-credentials
+    image: postgres:18-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set POSTGRES_ADMIN_PASSWORD in .env}
+      CHATGPT2API_DATABASE_PASSWORD: ${CHATGPT2API_DATABASE_PASSWORD:?Set CHATGPT2API_DATABASE_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: --auth-local=scram-sha-256 --auth-host=scram-sha-256
+      TZ: Asia/Shanghai
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./init-databases.sh:/docker-entrypoint-initdb.d/10-app-databases.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U postgres -d postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    logging: *logging
+
+  redis:
+    extends:
+      file: config.yaml
+      service: redis-credentials
+    image: redis:8-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  codex-proxy-rs:
+    image: ${CPR_IMAGE:-ghcr.io/const-time/codex-proxy-rs:latest}
+    restart: unless-stopped
+    user: '10001:10001'
+    init: true
+    stop_grace_period: 75s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - '${BIND_ADDRESS:-127.0.0.1}:${CPR_PORT:-8080}:8080'
+    volumes:
+      - cpr-data:/app/.runtime/data
+      - cpr-logs:/app/.runtime/logs
+    configs:
+      - source: cpr_config
+        target: /app/deploy/config.yaml
+    environment:
+      HOME: /app
+      CPR_SERVER_HOST: 0.0.0.0
+      CPR_SERVER_PORT: '8080'
+      CPR_DATABASE_URL: postgres://codex_proxy@postgres:5432/codex_proxy
+      CPR_REDIS_URL: redis://redis:6379/
+      CPR_DEPLOYMENT_MODE: docker
+      CPR_UPDATE_REPOSITORY: Const-Time/codex-proxy-rs
+      CPR_UPDATE_CHANNEL: stable
+      CPR_GITHUB_API_BASE: https://api.github.com/repos
+      CPR_UPDATE_EXE_PATH: /app/bin/codex-proxy-rs
+      CPR_WEB_DIST_DIR: /app/web/dist
+      CPR_ENABLE_SELF_RESTART: 'true'
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:8080/healthz]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *logging
+
+  chatgpt2api:
+    image: ${CHATGPT2API_IMAGE:-ghcr.io/const-time/chatgpt2api:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '${BIND_ADDRESS:-127.0.0.1}:${CHATGPT2API_PORT:-3000}:80'
+    environment:
+      DATABASE_URL: postgresql://chatgpt2api:${CHATGPT2API_DATABASE_PASSWORD:?Set CHATGPT2API_DATABASE_PASSWORD in .env}@postgres:5432/chatgpt2api
+      DATABASE_POOL_SIZE: '10'
+      DATABASE_MAX_OVERFLOW: '10'
+      CHATGPT2API_AUTH_KEY: ${CHATGPT2API_AUTH_KEY:?Set CHATGPT2API_AUTH_KEY in .env}
+      CHATGPT2API_BASE_URL: ${CHATGPT2API_BASE_URL:-}
+      CHATGPT2API_THREAD_TOKENS: ${CHATGPT2API_THREAD_TOKENS:-120}
+      TZ: Asia/Shanghai
+    volumes:
+      - chatgpt2api-runtime:/app
+      - chatgpt2api-data:/app/data
+      - type: bind
+        source: ./config.json
+        target: /app/config.json
+        bind:
+          create_host_path: false
+    logging: *logging
+
+configs:
+  cpr_config:
+    file: ./config.yaml
+
+volumes:
+  postgres-data:
+  redis-data:
+  cpr-data:
+  cpr-logs:
+  chatgpt2api-runtime:
+  chatgpt2api-data:

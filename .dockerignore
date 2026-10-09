@@ -1,5 +1,10 @@
 .git
 .gitignore
+.codex_tmp
+deploy/combined/.env
+deploy/combined/config.yaml
+deploy/combined/config.json
+deploy/combined/backups
 config.json
 .idea
 .venv
